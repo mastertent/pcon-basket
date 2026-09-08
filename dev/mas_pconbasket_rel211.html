@@ -1,0 +1,473 @@
+<html><!-- mas_pconbasket_rel2 2.13 UNIFIED TEST--><head>
+    <!--
+        23.05.2023
+        24.04.2023 updated Prices
+        06.09.2023 bug with bulk delete quote products > 25
+        20.02.2024 added locale parameter (CPQ) in getSessionFromGatekeeper
+    -->
+        <script>
+            var EosSdk = window.EosSdk || {};
+    // @@@ EOS - GL extra function to get formContext from Form
+            EosSdk.setClientApiContext = function(xrm, formContext, entity) {
+                // Optionally set Xrm and formContext as global variables on the page.
+                if (document.eosInfo != null){
+                    return;
+                    //delete document.eosInfo;
+                }
+                document.eosInfo = new Object();
+                document.eosInfo.Xrm = xrm;
+                document.eosInfo._formContext = formContext;
+                document.eosInfo._entity = entity;
+                document._entity = entity;
+    
+                document.eosInfo.srcCPQ = formContext.getControl("WebResource_CPQ").getSrc();
+    
+                if (entity == "opportunity" || entity == "quote") {
+                    document.eosInfo.accountField = "customerid";
+                    document.eosInfo.obkFileField = "mas_obkfile";
+                    document.eosInfo.remarks = new Object();
+                }
+                else {
+                    document.eosInfo.accountField = "accountid";
+                    document.eosInfo.obkFileField = "mas_obkfile";
+                }
+                if (entity == "opportunity") {
+                    document.eosInfo.entitySetname = "opportunities";
+                }
+                else if (entity == "quote") {
+                    document.eosInfo.entitySetname = "quotes";
+                }
+                document.eosInfo.recordId = formContext.data.entity.getId();
+    
+                // Add script logic here that uses xrm or the formContext.
+                //eg.: formContext.getAttribute("name").setValue("Pippo");
+                document.eosInfo._pcon_basket_url = "https://integration.basket.pcon-solutions.com/v2.14/?mode=integration";
+                document.eosInfo._pcon_overdue_days = "30";
+                x = EosSdk.getCeParam(xrm, "PCON_BASKET_URL", document.eosInfo._pcon_basket_url);
+                y = EosSdk.getCeParam(xrm, "PCON_OVERDUE_DAYS", document.eosInfo._pcon_overdue_days);
+    
+                document.eosInfo.oData = new Object();
+                if (entity == "opportunity")
+                {
+                    EosSdk.getCeOppData(xrm, formContext.data.entity.getId(), document.eosInfo.oData);
+                }
+                else if (entity == "quote")
+                {
+                    EosSdk.getCeQuoData(xrm, formContext.data.entity.getId(), document.eosInfo.oData);
+                }
+                //debugger;
+
+                setTimeout(function() { startBasket(); }, 100);
+            }
+    
+            EosSdk.getCeParam = function(xrm, paramName, eosObj) {
+                    //var result = document.Xrm.WebApi.retrieveMultipleRecords("eos_parameter", "?$select=eos_name,eos_stringparam,eos_intparam&$top=1&$filter=eos_name eq '" + paramName + "'").then(
+                    var result = xrm.WebApi.retrieveMultipleRecords("eos_parameter", "?$select=eos_name,eos_stringparam,eos_intparam&$top=1&$filter=eos_name eq '" + paramName + "'").then(
+                    function success(result) {
+                        for (var i = 0; i < result.entities.length; i++) {
+                            try {
+                                //debugger;
+                                eosObj = result.entities[i]["eos_stringparam"];
+                                console.log(paramName + ": " + eosObj);
+                            } catch (error) {
+                                console.log("Err. EosSdk.getCeParam*[" + paramName + "]: " + error.message);
+                            }
+                        }                    
+                        // perform additional operations on retrieved records
+                        return eosObj;
+                    },
+                    function (error) {
+                        debugger;
+                        eosObj = "";
+                        console.log("Err. EosSdk.getCeParam[" + paramName + "]: " + error.message);
+                        return eosObj;
+                        // handle error conditions
+                    }
+                );        
+            }    
+    
+            EosSdk.getCeOppData = async function(xrm, opportunityid, eosObj) {
+                    var result = await xrm.WebApi.retrieveRecord("opportunity", opportunityid, "?$select=name,statecode,description,mas_number&$expand=customerid_account($select=name,address1_line1,address1_city,address1_postalcode,eoslib_customernumber,accountnumber;$expand=eos_countryid($select=eos_code),eos_languageid($select=eos_code)),mas_contactid($select=fullname,firstname,lastname,address1_line1,address1_city,address1_postalcode,emailaddress1,telephone1;$expand=eos_countryid($select=eos_code)),eoslib_legalentityid($select=eoslib_code,mas_countrycode),pricelevelid($select=mas_code,mas_gatekeeperid),transactioncurrencyid($select=isocurrencycode),eoslib_ExternalUserId($select=eoslib_code,eoslib_fullname;$expand=mas_languageid($select=eos_code)),eoslib_paymenttermid($select=eoslib_name)").then( // ev. 3 parameter: $select, $expand, ...
+                    function success(result) {
+                        try {
+                            eosObj.o_guid = opportunityid;
+                            eosObj.o_name =  result["name"];
+                            eosObj.o_projectname =  result["mas_number"];
+                            eosObj.o_displayProjectReadOnly = !(result["statecode"] === 0);
+                            EosShowHideWarning();
+                            
+                            console.log("Name : " + eosObj.o_name);
+                            eosObj.o_descr = result["description"];
+                            eosObj.o_number = result["mas_number"];
+                            eosObj.o_legalentity = result["eoslib_legalentityid"] == null ? "" : result["eoslib_legalentityid"]["eoslib_code"];
+                            eosObj.o_legalentity_countrycode = result["eoslib_legalentityid"] == null ? "" : result["eoslib_legalentityid"]["mas_countrycode"];
+                            eosObj.o_pricelist = result["pricelevelid"] == null ? "" : result["pricelevelid"]["mas_code"];
+                            eosObj.o_gatekeeperid = "";
+                            if (result["pricelevelid"]["mas_gatekeeperid"]) {
+                                eosObj.o_gatekeeperid = result["pricelevelid"]["mas_gatekeeperid"];
+                                eosObj.o_gatekeeperid = eosObj.o_gatekeeperid.substring(eosObj.o_gatekeeperid.indexOf("=")+1);
+                            }
+                            result["pricelevelid"] == null ? "" : result["pricelevelid"]["mas_gatekeeperid"];
+                            eosObj.o_currency = result["transactioncurrencyid"] == null ? "" : result["transactioncurrencyid"]["isocurrencycode"];
+                            eosObj.o_salesperson_code = result["eoslib_ExternalUserId"] == null ? "" : result["eoslib_ExternalUserId"]["eoslib_code"];
+                            eosObj.o_salesperson_name = result["eoslib_ExternalUserId"] == null ? "" : result["eoslib_ExternalUserId"]["eoslib_fullname"];
+                            eosObj.o_lang = (result["eoslib_ExternalUserId"] == null || result["eoslib_ExternalUserId"]["mas_languageid"] == null) ? "en" : result["eoslib_ExternalUserId"]["mas_languageid"]["eos_code"].toLowerCase(); // 04.04.2023 - set project language from salesperson
+                            eosObj.o_paymentterms = result["eoslib_paymenttermid"] == null ? "" : result["eoslib_paymenttermid"]["eoslib_name"];
+                            if (result["customerid_account"] == null) {
+                                eosObj.a_name = "";
+                                eosObj.a_cusnumber = "";
+                                eosObj.a_accnumber = "";
+                                eosObj.a_street = "";
+                                eosObj.a_city = "";
+                                eosObj.a_zip = "";
+                                eosObj.a_country = "";
+                                eosObj.a_lang = "";
+                            }
+                            else {
+                                eosObj.a_name = result["customerid_account"]["name"];
+                                eosObj.a_cusnumber = result["customerid_account"]["eoslib_customernumber"];
+                                eosObj.a_accnumber = result["customerid_account"]["accountnumber"];
+                                eosObj.a_street = result["customerid_account"]["address1_line1"];
+                                eosObj.a_city = result["customerid_account"]["address1_city"];
+                                eosObj.a_zip = result["customerid_account"]["address1_postalcode"];
+                                eosObj.a_country = result["customerid_account"]["eos_countryid"] == null ? "" : result["customerid_account"]["eos_countryid"]["eos_code"];
+                                eosObj.a_lang = result["customerid_account"]["eos_languageid"] == null ? "" : result["customerid_account"]["eos_languageid"]["eos_code"];
+                            }
+    
+                            if (result["mas_contactid"] == null) {
+                                eosObj.c_name = "";
+                                eosObj.c_firstname = "";
+                                eosObj.c_lastname = "";
+                                eosObj.c_street = "";
+                                eosObj.c_city = "";
+                                eosObj.c_zip = "";
+                                eosObj.c_email = "";
+                                eosObj.c_phone = "";
+                                eosObj.c_country = "";
+                            }
+                            else {
+                                //debugger; //@@@
+                                eosObj.c_name = result["mas_contactid"]["fullname"];
+                                eosObj.c_firstname = result["mas_contactid"]["firstname"];
+                                eosObj.c_lastname = result["mas_contactid"]["lastname"];
+                                eosObj.c_street = result["mas_contactid"]["address1_line1"];
+                                eosObj.c_city = result["mas_contactid"]["address1_city"];
+                                eosObj.c_zip = result["mas_contactid"]["address1_postalcode"];
+                                eosObj.c_email = result["mas_contactid"]["emailaddress1"];
+                                eosObj.c_phone = result["mas_contactid"]["telephone1"];
+                                eosObj.c_country = result["mas_contactid"]["eos_countryid"] == null ? "" : result["mas_contactid"]["eos_countryid"]["eos_code"];
+                            }
+                            console.log("EosSdk.getCeOppData loaded successfully");
+    
+    /*
+                            eosObj.customerNo =  result["eoslib_customernumber"];
+                            eosObj.legalEntity =  result[""];
+                            eosObj.priceList =  result["name"];
+                            eosObj.salesperson =  result["name"];
+                            // ma_ = prefix for mainAddress
+                            eosObj.ma_street =  result["name"]; 
+                            eosObj.ma_city =  result["name"];
+                            eosObj.ma_postalcode =  result["name"];
+                            eosObj.ma_country =  result["name"];
+                            // ca_ = prefix for customerAddress
+                            eosObj.ca_street =  result["name"]; 
+                            eosObj.ca_city =  result["name"];
+                            eosObj.ca_postalcode =  result["name"];
+                            eosObj.ca_country =  result["name"];
+    */
+                            } catch (error) {
+                                debugger;
+                                console.log("Err. EosSdk.getCeOppData*: " + error.message);
+                            }
+                        },                    
+                        // perform additional operations on retrieved records
+                    function (error) {
+                        debugger;
+                        eosObj.value = error.message;
+                        console.log("Err EosSdk.getCeOppData: " + error.message);
+                        // handle error conditions
+                    }
+                );
+            }
+            EosSdk.getCeQuoData = async function (xrm, quoteid, eosObj) {
+                    var result = await xrm.WebApi.retrieveRecord("quote", quoteid, "?$select=name,statecode,description,mas_zingerlequotenumber,quotenumber&$expand=customerid_account($select=name,address1_line1,address1_city,address1_postalcode,eoslib_customernumber,accountnumber;$expand=eos_countryid($select=eos_code),eos_languageid($select=eos_code)),mas_contactid($select=fullname,firstname,lastname,address1_line1,address1_city,address1_postalcode,emailaddress1,telephone1;$expand=eos_countryid($select=eos_code)),eoslib_legalentityid($select=eoslib_code,mas_countrycode),pricelevelid($select=mas_code,mas_gatekeeperid),transactioncurrencyid($select=isocurrencycode),eoslib_ExternalUserId($select=eoslib_code,eoslib_fullname;$expand=mas_languageid($select=eos_code)),eoslib_paymenttermid($select=eoslib_name)").then( // ev. 3 parameter: $select, $expand, ...
+                    function success(result) {
+                        try {
+                            eosObj.o_guid = quoteid;
+                            eosObj.o_name =  result["name"];
+                            eosObj.o_projectname =  result["quotenumber"];
+                            eosObj.o_displayProjectReadOnly = !(result["statecode"] === 0);
+                            EosShowHideWarning();
+                            
+                            console.log("Name : " + eosObj.o_name);
+                            eosObj.o_descr = result["description"];
+                            eosObj.o_number = result["mas_zingerlequotenumber"];
+                            eosObj.o_legalentity = result["eoslib_legalentityid"] == null ? "" : result["eoslib_legalentityid"]["eoslib_code"];
+                            eosObj.o_legalentity_countrycode = result["eoslib_legalentityid"] == null ? "" : result["eoslib_legalentityid"]["mas_countrycode"];
+                            eosObj.o_pricelist = result["pricelevelid"] == null ? "" : result["pricelevelid"]["mas_code"];
+                            eosObj.o_gatekeeperid = "";
+                            if (result["pricelevelid"]["mas_gatekeeperid"]) {
+                                eosObj.o_gatekeeperid = result["pricelevelid"]["mas_gatekeeperid"];
+                                eosObj.o_gatekeeperid = eosObj.o_gatekeeperid.substring(eosObj.o_gatekeeperid.indexOf("=")+1);
+                            }
+                            eosObj.o_currency = result["transactioncurrencyid"] == null ? "" : result["transactioncurrencyid"]["isocurrencycode"];
+                            eosObj.o_salesperson_code = result["eoslib_ExternalUserId"] == null ? "" : result["eoslib_ExternalUserId"]["eoslib_code"];
+                            eosObj.o_salesperson_name = result["eoslib_ExternalUserId"] == null ? "" : result["eoslib_ExternalUserId"]["eoslib_fullname"];
+
+                            eosObj.o_lang = (result["eoslib_ExternalUserId"] == null || result["eoslib_ExternalUserId"]["mas_languageid"] == null) ? "en" : result["eoslib_ExternalUserId"]["mas_languageid"]["eos_code"].toLowerCase(); // 04.04.2023 - set project language from salesperson
+                            eosObj.o_paymentterms = result["eoslib_paymenttermid"] == null ? "" : result["eoslib_paymenttermid"]["eoslib_name"];
+                            if (result["customerid_account"] == null) {
+                                eosObj.a_name = "";
+                                eosObj.a_cusnumber = "";
+                                eosObj.a_accnumber = "";
+                                eosObj.a_street = "";
+                                eosObj.a_city = "";
+                                eosObj.a_zip = "";
+                                eosObj.a_country = "";
+                                eosObj.a_lang = "";
+                            }
+                            else {
+                                eosObj.a_name = result["customerid_account"]["name"];
+                                eosObj.a_cusnumber = result["customerid_account"]["eoslib_customernumber"];
+                                eosObj.a_accnumber = result["customerid_account"]["accountnumber"];
+                                eosObj.a_street = result["customerid_account"]["address1_line1"];
+                                eosObj.a_city = result["customerid_account"]["address1_city"];
+                                eosObj.a_zip = result["customerid_account"]["address1_postalcode"];
+                                eosObj.a_country = result["customerid_account"]["eos_countryid"] == null ? "" : result["customerid_account"]["eos_countryid"]["eos_code"];
+                                eosObj.a_lang = result["customerid_account"]["eos_languageid"] == null ? "" : result["customerid_account"]["eos_languageid"]["eos_code"];
+                            }
+    
+                            if (result["mas_contactid"] == null) {
+                                eosObj.c_name = "";
+                                eosObj.c_firstname = "";
+                                eosObj.c_lastname = "";
+                                eosObj.c_street = "";
+                                eosObj.c_city = "";
+                                eosObj.c_zip = "";
+                                eosObj.c_email = "";
+                                eosObj.c_phone = "";
+                                eosObj.c_country = "";
+                            }
+                            else {
+                                //debugger; //@@@
+                                eosObj.c_name = result["mas_contactid"]["fullname"];
+                                eosObj.c_firstname = result["mas_contactid"]["firstname"];
+                                eosObj.c_lastname = result["mas_contactid"]["lastname"];
+                                eosObj.c_street = result["mas_contactid"]["address1_line1"];
+                                eosObj.c_city = result["mas_contactid"]["address1_city"];
+                                eosObj.c_zip = result["mas_contactid"]["address1_postalcode"];
+                                eosObj.c_email = result["mas_contactid"]["emailaddress1"];
+                                eosObj.c_phone = result["mas_contactid"]["telephone1"];
+                                eosObj.c_country = result["mas_contactid"]["eos_countryid"] == null ? "" : result["mas_contactid"]["eos_countryid"]["eos_code"];
+                            }
+    
+                            console.log("EosSdk.getCeQuoData loaded successfully");
+    
+                            } catch (error) {
+                                debugger;
+                                console.log("Err. EosSdk.getCeQuoData*: " + error.message);
+                            }
+                        },                    
+                        // perform additional operations on retrieved records
+                    function (error) {
+                        debugger;
+                        eosObj.value = error.message;
+                        console.log("Err EosSdk.getCeQuoData: " + error.message);
+                        // handle error conditions
+                    }
+                );
+            }        
+        </script>
+    
+        <title>pCon.basket integration example</title>
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta charset="utf-8">
+    
+        <style>
+            html, body {
+                width: 100%;
+                height: 100%;
+                padding: 0px;
+                margin: 0px;
+                font-family: system-ui, 'Segoe UI', sans-serif;
+                color: #333333;
+            }
+    
+            #basketFrame {
+                width: 100%;
+                height: 100%;
+                border: none;
+                display: none;
+            }
+    
+            #intro {
+                display: flex;
+                justify-content: center;
+            }
+    
+            .introContent {
+                border: none;
+                max-width: 800px;
+                padding: 20px;
+                margin-top: 40px;
+            }
+            .introContent h2 {
+                display: block;
+                text-align: center;
+            }
+            .introContent .buttonDiv {
+                padding-top: 40px;
+                padding-bottom: 10px;
+                text-align: center;
+            }
+    
+            #output {
+                display: none;
+            }
+            .outputContent {
+                padding: 20px;
+            }
+            .outputContent .buttonDiv {
+                text-align: center;
+            }
+    
+            .itemDataWrapper {
+                display: flex;
+                align-items: flex-start;
+                margin-top: 20px;
+                font-size: 13px;
+            }
+            #itemList {
+                width: 60%;
+                border-collapse: collapse;
+                margin-right: 10px;
+                box-sizing: border-box;
+            }
+            #itemList td, th {
+                border: 1px solid #C0C0C0;
+                padding: 4px;
+            }
+    
+            #itemInfo {
+                width: 40%;
+                border-left: 1px solid #C0C0C0;
+                box-sizing: border-box;
+                padding-left: 10px;
+                word-break: break-word;
+            }
+            #itemInfo > .header {
+                font-weight:700;
+                padding: 5px;
+                padding-left: 0px;
+                display: inline-block;
+            }
+    
+        </style>
+    
+    <meta><meta><meta><meta><meta><meta><meta><meta><meta><meta><meta></head>
+    
+    <body style="overflow-wrap: break-word;" onfocusout="parent.setEmailRange();">
+        
+        <!-- load dependencies -->
+        <!-- <script src="https://integration.basket.pcon-solutions.com/v2.14/libs/wcf/libs/core-js/minified.js" type="text/javascript"></script> -->
+    
+        <!-- load EAIWS API -->
+        <!-- <script src="https://integration.basket.pcon-solutions.com/v2.14/libs/wcf/bundles/eaiws.js" type="text/javascript"></script> -->
+    
+        <div id="intro" class="contentWrapper">
+            <div class="introContent">
+                <h2>pCon.basket integration</h2>
+                <!--
+                This example demonstrates how to embedd pCon.basket as an iframe and shows how to communicate with the basket.
+                If you want to load an already existing article list you can select an OBK or OBX file before starting the basket.
+                Otherwise the basket will be started with a new/empty article list.
+                -->
+                <div style="margin-top:20px">
+                    
+                    <label for="fileInput" style="display:none;">OBK/OBX file: </label>
+                    <input id="fileInput" type="file" accept=".obk, .obx" style="display:none;">
+                    <button onclick="clearFileInput()" style="display:none;">Clear</button>
+                    <div class="buttonDiv">
+                        <!-- <button onclick="onLoginBtnClicked2()">pCon.Login</button><br/><br/> -->
+                        <button onclick="startBasket()" style="background: #19976a; border: none; border-radius: 45px; color: #fff; font-size: 20px; line-height: 1; padding: 20px clamp(20px, 2.34375vw, 45px);">Start pCon.basket</button>
+                    </div>
+                    <div id="projectReadOnly" style="display:none;">
+                        <p style="color:red;">WARNING! Record is read-only. Do not modify!</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    
+        <iframe id="basketFrame"></iframe>
+    
+        <div id="output" class="contentWrapper">
+            <div class="outputContent">
+                <div class="buttonDiv">
+                    Save OBK on File System <input type="checkbox" id="chkSaveobk" name="chkSaveobk" value="Save">
+                    <button onclick="saveOBK()">Save OBK on Dyn365CE and refresh <strong>(white until automatic refresh)</strong></button>
+                    <!-- <button onclick="saveOBX()">Save OBX </button> -->
+                    <!-- <button onclick="restart()">Close Session and Restart</button> -->
+                    <button onclick="refreshCE()">Refresh CE page without saving</button>
+                    <!--
+                    <button onclick="showItemList()">Get Item List (debugger)</button>
+                    <button onclick="getEosTotalAmountForOpportunity()">Get Eos Total Amount for Opp (debugger)</button>
+                    <button onclick="getEosRenewQuoteLines()">Renew quot files for Quote (debugger)</button>
+                    -->
+                    
+                    
+                </div>
+                <div class="itemDataWrapper">
+                    <table id="itemList">
+                        <tbody><tr>
+                            <th>#</th>
+                            <th>Label</th>
+                            <th>Type</th>
+                            <th>Basket Item ID</th>
+                            <th style="width: 24px;"></th>
+                        </tr>
+                    </tbody></table>
+                    <div id="itemInfo">
+                        <span class="header">Item Information</span>
+                        <div id="itemInfoContent">
+                            Click on "i" to get additional information about an item.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div style="display:none;">
+    
+            <div id="user_info">
+              <div id="name"></div>
+              <div id="email"></div>
+            </div>
+            <input type="text" id="endpoint-input" placeholder="">
+            <div id="endpoint_response">
+              <pre id="last_request_json"></pre>
+            </div>
+              <button id="fetch_endpoint_button">Fetch Endpoint</button>
+          
+            <div id="oauth_error" style="display: none"></div>
+            <div id="login_state"></div>
+          </div>
+          
+        <!-- <script src="/WebResources/mas_pconjs_config.js"></script> -->
+        <!--@@@ <script src="/WebResources/mas_pconjs_login.js"></script> -->
+        <!-- <script src="/WebResources/mas_cpq_r2_pcon-login.js"></script> -->
+
+    <script>
+        function EosShowHideWarning() {
+            //debugger;
+            try {
+                if (document.eosInfo.oData.o_displayProjectReadOnly)
+                   document.getElementById("projectReadOnly").style.display = "block";
+                }
+            catch(err) {
+                document.getElementById("projectReadOnly").style.display = "none";
+            }
+        }
+    </script>    
+    <!-- <script src="/WebResources/mas_cpq_r2_functions.js"></script> -->
+    <script src="https://cdn.jsdelivr.net/gh/mastertent/pcon-basket@2.14.2/build/main.js" type="text/javascript"></script>
+
+    </body></html>

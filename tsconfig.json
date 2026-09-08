@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "es2017",
+    "lib": [ "es2021", "dom" ],
+    "module": "ES2020",
+    "moduleResolution": "node",
+    "rootDir": "./src/",
+    "outDir": "./build/",
+    "types": [],
+    "removeComments": false,
+    "sourceMap": false,
+    "pretty": true,
+    "stripInternal": true,
+    "isolatedModules": true,
+    "experimentalDecorators": true,
+    "strict": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "forceConsistentCasingInFileNames": true,
+    "allowUnreachableCode": false,
+    "esModuleInterop": true,
+    "importHelpers": true,
+    "declaration": false
+  },
+  "include": [
+    "./src/**/*.ts"
+  ]
+}
