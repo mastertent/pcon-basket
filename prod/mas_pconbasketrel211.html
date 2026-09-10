@@ -7,18 +7,6 @@
     -->
         <script>
             var EosSdk = window.EosSdk || {};
-            EosSdk.loadBasketBuild = function (formContext) {
-               var s = document.createElement("script");
-                s.type = "text/javascript";
-                s.src = src;
-                s.onload = function () {
-                    setTimeout(function () { startBasket(); }, 100);
-                };
-                s.onerror = function () {
-                    console.log("Error loading build basket: " + src);
-                };
-                document.body.appendChild(s);
-            };
     // @@@ EOS - GL extra function to get formContext from Form
             EosSdk.setClientApiContext = function(xrm, formContext, entity) {
                 // Optionally set Xrm and formContext as global variables on the page.
@@ -67,23 +55,20 @@
                 {
                     EosSdk.getCeQuoData(xrm, formContext.data.entity.getId(), document.eosInfo.oData);
                 }
-                // setTimeout(function() { startBasket(); }, 100);
-                EosSdk.loadBasketBuild(formContext);
+                setTimeout(function() { startBasket(); }, 100);
             }
     
             EosSdk.getCeParam = function(xrm, paramName, eosObj) {
-                    //var result = document.Xrm.WebApi.retrieveMultipleRecords("eos_parameter", "?$select=eos_name,eos_stringparam,eos_intparam&$top=1&$filter=eos_name eq '" + paramName + "'").then(
                     var result = xrm.WebApi.retrieveMultipleRecords("eos_parameter", "?$select=eos_name,eos_stringparam,eos_intparam&$top=1&$filter=eos_name eq '" + paramName + "'").then(
                     function success(result) {
                         for (var i = 0; i < result.entities.length; i++) {
                             try {
-                                //debugger;
                                 eosObj = result.entities[i]["eos_stringparam"];
                                 console.log(paramName + ": " + eosObj);
                             } catch (error) {
                                 console.log("Err. EosSdk.getCeParam*[" + paramName + "]: " + error.message);
                             }
-                        }                    
+                        }
                         // perform additional operations on retrieved records
                         return eosObj;
                     },
