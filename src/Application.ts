@@ -1093,20 +1093,16 @@ export class Application {
                     }
                 } else if (req.status === 204) {
                     // request complete.
-                    console.log(
-                        "**fileChunckUpload 204 - offset: " +
-                        offset +
-                        " - count: " +
-                        count,
-                    );
+                    // console.log("**fileChunckUpload 204 - offset: " + offset + " - count: " + count);
                     document.eosInfo.Xrm.Utility.closeProgressIndicator();
-                    //refreshCE();
-                    //var formContext = document.eosInfo._formContext;
-                    //formContext.ui.refresh();
-                    document.eosInfo._formContext.ui.tabs
-                        .get("Summary_tab")
-                        ?.setFocus();
-                    //        document.eosInfo.uploadFile = true;
+                   const formContext = document.eosInfo._formContext;
+                   if (document.eosInfo.entitySetname === "opportunities") {
+                    if (formContext.data.getIsDirty()) {
+                        await formContext.data.save();
+                    }
+                    formContext.ui.refresh();
+                }
+                    formContext.ui.tabs.get("Summary_tab")?.setFocus();
                     break;
                 } else {
                     // error happened.
